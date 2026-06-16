@@ -182,10 +182,12 @@ class mmc_detect_loop_async:
         self.state.append( 0 )
         self.sizes.extend( sizes )
 
+        self.loaded_sizes = manager.list()
+
         self.conf = manager.Value('d', 0.25)
         self.delay_margin = manager.Value('d', 0.075)
 
-        self.P1 = Process( target = mmc_detect_loop_remote, args = ( self.sizes, self.state, self.conf,img_shm_name, img_coords_name, img_ref_name, img_shape, boxes_shm_name, box_hwnds_shm_name, box_info_shm_name ) )
+        self.P1 = Process( target = mmc_detect_loop_remote, args = ( self.sizes, self.loaded_sizes,self.state, self.conf,img_shm_name, img_coords_name, img_ref_name, img_shape, boxes_shm_name, box_hwnds_shm_name, box_info_shm_name ) )
 
     def start( self ):
         self.P1.start()
@@ -199,16 +201,17 @@ class mmc_detect_loop_async:
             self.P1.terminate()
             self.P1.join()
 
-def mmc_detect_loop_remote( sizes, state, conf, img_shm_name, img_coords_name, img_ref_name, img_shape, boxes_shm_name, box_hwnds_shm_name, box_info_shm_name):
+def mmc_detect_loop_remote( sizes,loaded_sizes, state, conf, img_shm_name, img_coords_name, img_ref_name, img_shape, boxes_shm_name, box_hwnds_shm_name, box_info_shm_name):
     detector = mmc_detect_loop_class()
-    detector.initialize( sizes, state, conf, img_shm_name, img_coords_name, img_ref_name, img_shape, boxes_shm_name, box_hwnds_shm_name, box_info_shm_name )
+    detector.initialize( sizes,loaded_sizes, state, conf, img_shm_name, img_coords_name, img_ref_name, img_shape, boxes_shm_name, box_hwnds_shm_name, box_info_shm_name )
     detector.go_detect()
 
 class mmc_detect_loop_class:
 
-    def initialize( self, sizes, state, conf,img_shm_name, img_coords_name, img_ref_name, img_shape, boxes_shm_name, box_hwnds_shm_name, box_info_shm_name ):
+    def initialize( self, sizes,loaded_sizes, state, conf,img_shm_name, img_coords_name, img_ref_name, img_shape, boxes_shm_name, box_hwnds_shm_name, box_info_shm_name ):
         from ultralytics import YOLO
         self.sizes = sizes
+        self.loaded_sizes = loaded_sizes
         self.state = state
         self.env = os.getenv( 'mmcNNenv' )
         self.last_t = 0
@@ -219,6 +222,8 @@ class mmc_detect_loop_class:
 
         self.models = {}
 
+        while len(self.loaded_sizes):
+            self.loaded_sizes.pop(0)
         for size in self.sizes:
             if self.env == 'openvino':
                 model = YOLO( "../neuralnet_models/640m_openvino_model", task="detect")
@@ -252,6 +257,7 @@ class mmc_detect_loop_class:
             model = self.get_model_for_size( size )
             if model is not None:
                 self.get_model_for_size(size).predict(warmup_img, imgsz=size, verbose=False )
+                self.loaded_sizes.append(size)
 
         self.img_shape = img_shape
 
@@ -449,6 +455,8 @@ class mmc_realtime:
         self.detector_async = mmc_detect_loop_async()
         self.detector_async.initialize( self.sc.img_shm_name, self.sc.img_coords_name, self.sc.img_ref_name, self.sc.img_shape, [], self.boxes_shm_name, self.box_hwnds_shm_name, self.box_info_shm_name )
         self.sizes = self.detector_async.sizes
+
+        self.loaded_sizes = self.detector_async.loaded_sizes
 
         self.to_show = {}
 
@@ -735,7 +743,7 @@ class mmc_realtime:
 
             self.profiler.mark( 'post_fps' )
 
-            if( cv2.waitKey(1) == ord('q') or self.running == False ):
+            if( cv2.pollKey() == ord('q') or self.running == False ):
                 cv2.destroyAllWindows()
                 self.open_windows = {}
                 if t1.is_alive():
