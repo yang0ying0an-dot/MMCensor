@@ -333,7 +333,7 @@ class mmc_gui:
         }
         for i in range(len(self.rt.decorators)):
             save_data["decorators"].append([self.decorator_types[i], self.rt.decorators[i].export_settings()])
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding="utf-8") as f:
             json.dump(save_data, f)
 
     def load_pushed(self):
