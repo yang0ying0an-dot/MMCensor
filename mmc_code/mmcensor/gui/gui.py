@@ -80,6 +80,8 @@ class mmc_gui:
         self.size_checks = []
         self.size_buttons = []
 
+        self.is_make_ready = False
+
         for i in range(len(mmc_const.supported_sizes ) ):
             iv = tk.IntVar( value=(i<2) )
             cb=tk.Checkbutton( self.tab_realtime, text='net size %s'%(mmc_const.supported_sizes[i],),onvalue=1,offvalue=0,variable=iv,command=self.update_sizes)
@@ -217,11 +219,15 @@ class mmc_gui:
     def down( self ):
         self.root.attributes( '-topmost', False )
 
-    def update_sizes( self ):
+    def update_sizes(self):
         sizes = []
+
         for i in range(len(mmc_const.supported_sizes)):
             if self.size_checks[i].get():
-                sizes.append( mmc_const.supported_sizes[i] )
+                size = mmc_const.supported_sizes[i]
+
+                if not self.is_make_ready or size in list(self.rt.loaded_sizes):
+                    sizes.append(size)
 
         self.rt.update_sizes(sizes)
 
@@ -402,9 +408,12 @@ class mmc_gui:
         self.redraw_decorators()
 
     def make_ready_pushed( self ):
+        self.is_make_ready = True
         for i in range(len(mmc_const.supported_sizes)):
                self.size_buttons[i].config(state=tk.DISABLED)
         self.ready_button.config(state='disabled')
+        self.load_button.config(state='disabled')
+        self.load_from_button.config(state='disabled')
         self.t_ready = threading.Thread( target=self.make_ready_async )
         self.t_ready.daemon = True
         self.t_ready.start()
@@ -412,9 +421,15 @@ class mmc_gui:
     def make_ready_async( self ):
         self.rt.make_ready()
         self.start_button.config(state='normal')
-        for i in range(len(mmc_const.supported_sizes)):
-            if self.size_checks[i].get():
-               self.size_buttons[i].config(state=tk.NORMAL)
+        self.load_button.config(state='normal')
+        self.load_from_button.config(state='normal')
+        loaded_sizes = list(self.rt.loaded_sizes)
+        print("Loaded model:"+str(loaded_sizes))
+        for i, size in enumerate(mmc_const.supported_sizes):
+            if size in loaded_sizes:
+                self.size_buttons[i].config(state=tk.NORMAL)
+            else:
+                self.size_buttons[i].config(state=tk.DISABLED)
 
     def start_pushed( self ):
         self.start_button.config(state='disabled')
