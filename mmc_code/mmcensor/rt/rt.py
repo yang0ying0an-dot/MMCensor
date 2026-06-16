@@ -212,7 +212,7 @@ class mmc_detect_loop_class:
         self.state = state
         self.env = os.getenv( 'mmcNNenv' )
         self.last_t = 0
-        self.fps_limit = 400
+        self.fps_limit = 300
         self.last_detect_finish = 0
 
         self.conf = conf
