@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
 from mmcensor.rt import mmc_realtime
 import os
 import sys
@@ -22,15 +22,19 @@ class mmc_gui:
         ##########################
         self.root = tk.Tk()
         self.root.protocol( "WM_DELETE_WINDOW", self.on_close )
-        self.root.geometry( "800x800" )
+        self.root.geometry("1200x950")
+        self.root.minsize(800, 600)
 
-        self.save_button = tk.Button( self.root, text= "Save", command = self.save_pushed )
-        self.save_as_button = tk.Button( self.root, text = "Save As (not yet implemented)" )
+        self.save_button = tk.Button( self.root, text= "Save", command = self.save_file )
+        self.save_as_button = tk.Button( self.root, text = "Save As", command = self.save_as_pushed)
         self.load_button = tk.Button( self.root, text = "Load", command=self.load_pushed )
+        self.load_from_button = tk.Button( self.root, text = "Load From", command=self.load_from_pushed )
+
 
         self.save_button.grid( row=0, column = 0 )
         self.save_as_button.grid( row=0, column=1 )
         self.load_button.grid( row = 0, column = 2 )
+        self.load_from_button.grid( row = 0, column = 3 )
 
         tab_parent = ttk.Notebook( self.root )
         self.tab_decorate = ttk.Frame( tab_parent )
@@ -234,7 +238,7 @@ class mmc_gui:
             self.disable_gray_screen_var.get()
         )
 
-    def mask_persistence_changed(self, value):
+    def mask_persistence_changed(self, value=None):
         self.rt.update_mask_persistence(float(self.mask_persistence_var.get()))
 
     def get_known_decorators( self ):
@@ -288,28 +292,112 @@ class mmc_gui:
         self.rt.decorators[index].destroy_config_frame()
         self.decorator_config_frame.destroy()
         self.redraw_decorators()
-    
-    def save_pushed( self ):
-        save_data = []
-        for i in range( len( self.rt.decorators ) ):
-            save_data.append( [ self.decorator_types[i], self.rt.decorators[i].export_settings() ] )
 
-        with open('saved_settings.json', 'w') as f:
-            json.dump( save_data, f )
+    def get_next_save_filename(self):
+        i = 1
+        while True:
+            filename = f"saved_settings_{i}.json"
+            if not os.path.exists(filename):
+                return filename
+            i += 1
 
-    def load_pushed( self ):
-        if not os.path.isfile( 'saved_settings.json' ):
+    def save_as_pushed( self):
+        path = filedialog.asksaveasfilename(
+            title="Save settings as",
+            defaultextension=".json",
+            initialfile=self.get_next_save_filename(),
+            filetypes=[
+                ("JSON files", "*.json"),
+            ]
+        )
+
+        if not path:
             return
 
-        with open('saved_settings.json' ) as data_file:
-            save_data = json.load( data_file )
+        self.save_file(path)
+
+    def save_file(self, path="saved_settings.json"):
+        save_data = {
+            "decorators": [],
+            "realtime": {
+                "selected_sizes": [
+                    mmc_const.supported_sizes[i]
+                    for i in range(len(mmc_const.supported_sizes))
+                    if self.size_checks[i].get()
+                ],
+                "delay_adjustment": float(self.delay_var.get()),
+                "disable_gray_screen": bool(self.disable_gray_screen_var.get()),
+                "mask_persistence": float(self.mask_persistence_var.get()),
+                "confidence": float(self.conf_var.get())
+            }
+        }
+        for i in range(len(self.rt.decorators)):
+            save_data["decorators"].append([self.decorator_types[i], self.rt.decorators[i].export_settings()])
+        with open(path, 'w') as f:
+            json.dump(save_data, f)
+
+    def load_pushed(self):
+        if os.path.isfile("saved_settings.json"):
+            self.load_file("saved_settings.json")
+            return
+
+        if os.path.isfile("saved_settings_1.json"):
+            self.load_file("saved_settings_1.json")
+            return
+
+    def load_from_pushed( self):
+        path = filedialog.askopenfilename(
+            title="Load settings",
+            filetypes=[
+                ("JSON files", "*.json"),
+            ]
+        )
+        if not path:
+            return
+        self.load_file(path)
+
+    def load_file(self, path="saved_settings.json"):
+        if not os.path.isfile(path):
+            return
+
+        with open(path, "r", encoding="utf-8") as data_file:
+            save_data = json.load(data_file)
 
         self.rt.decorators.clear()
         self.decorator_types.clear()
 
-        for elt in save_data:
-            self.add_decorator( elt[0] )
-            self.rt.decorators[-1].import_settings( elt[1] )
+        if isinstance(save_data, list):
+            decorators_data = save_data
+            realtime_data = {}
+        else:
+            decorators_data = save_data.get("decorators", [])
+            realtime_data = save_data.get("realtime", {})
+
+        for elt in decorators_data:
+            self.add_decorator(elt[0])
+            self.rt.decorators[-1].import_settings(elt[1])
+
+        selected_sizes = realtime_data.get("selected_sizes")
+        if selected_sizes is not None:
+            for i, size in enumerate(mmc_const.supported_sizes):
+                self.size_checks[i].set(1 if size in selected_sizes else 0)
+            self.update_sizes()
+
+        if "delay_adjustment" in realtime_data:
+            self.delay_var.set(realtime_data["delay_adjustment"])
+            self.update_delay()
+
+        if "disable_gray_screen" in realtime_data:
+            self.disable_gray_screen_var.set(realtime_data["disable_gray_screen"])
+            self.disable_gray_screen_changed()
+
+        if "mask_persistence" in realtime_data:
+            self.mask_persistence_var.set(realtime_data["mask_persistence"])
+            self.mask_persistence_changed()
+
+        if "confidence" in realtime_data:
+            self.conf_var.set(realtime_data["confidence"])
+            self.update_conf()
 
         self.redraw_decorators()
 
